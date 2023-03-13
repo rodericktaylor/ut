@@ -7,7 +7,7 @@
 //
 #include "test.hpp"
 
-static test::suite<"equality tests"> _ = [] {
+static test::suite _ = [] {
   using namespace test;
 
   "printing test"_test = [] {

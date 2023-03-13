@@ -7,7 +7,7 @@
 //
 #include "test.hpp"
 
-static test::suite<"exception tests"> _ = [] {
+static test::suite _ = [] {
   using namespace test;
 
   "exceptions/expressions"_test = [] {

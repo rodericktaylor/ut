@@ -17,6 +17,9 @@ class reporter {
   auto on(ut::events::test_run) -> void {}
   auto on(ut::events::test_skip) -> void {}
   auto on(ut::events::test_end) -> void {}
+  auto on(ut::events::test_finish) -> void {}
+  auto on(ut::events::suite_begin) -> void {}
+  auto on(ut::events::suite_end) -> void {}
   template <class TMsg>
   auto on(ut::events::log<TMsg>) -> void {}
   template <class TExpr>

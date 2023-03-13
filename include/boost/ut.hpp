@@ -282,10 +282,10 @@ static_assert(prefix_length != std::string_view::npos,
               "Auto find prefix and suffix lenght broken error 2");
 static_assert(prefix_length <= raw_length,
               "Auto find prefix and suffix lenght broken error 3");
-static constexpr const std::size_t tail_lenght = raw_length - prefix_length;
-static_assert(need_length <= tail_lenght,
+static constexpr const std::size_t tail_length = raw_length - prefix_length;
+static_assert(need_length <= tail_length,
               "Auto find prefix and suffix lenght broken error 4");
-static constexpr const std::size_t suffix_length = tail_lenght - need_length;
+static constexpr const std::size_t suffix_length = tail_length - need_length;
 
 }  // namespace detail
 
@@ -309,6 +309,78 @@ template <typename TargetType>
   std::string_view result = raw_type_name.substr(detail::prefix_length, len);
   return result;
 }
+
+namespace detail
+{
+
+template<std::size_t N>
+class to_string_t {
+private:
+    [[nodiscard]] constexpr static auto buflen() noexcept {
+        unsigned int len = (N != 0) ? 1 : 2;
+        for (auto n = N; n; len++, n /= 10);
+        return len;
+    }
+
+    char buf[buflen()] = {};
+
+public:
+    constexpr to_string_t() noexcept {
+        auto ptr = buf + buflen();
+        *--ptr = '\0';
+
+        if (N != 0) {
+            for (auto n = N; n; n /= 10)
+                *--ptr = "0123456789"[n % 10];
+        } else {
+            buf[0] = '0';
+        }
+    }
+
+    [[nodiscard]] constexpr operator const char*() const { return buf; }
+};
+
+template <std::size_t N>
+constexpr to_string_t<N> to_string;
+
+template<std::size_t N>
+class size_to_string_view_t {
+private:
+
+  const char* array[N] = {};
+
+  template <typename Array, std::size_t... Ints>
+  constexpr static void make_array(Array&& arr, std::index_sequence<Ints...>) noexcept
+  {
+    std::size_t i = 0;
+    (void(arr[i++] = static_cast<const char*>(to_string<Ints>)), ...);
+  }
+
+public:
+  constexpr size_to_string_view_t() noexcept {
+    make_array(array, std::make_index_sequence<N>());
+  }
+
+  [[nodiscard]] constexpr const char* operator()(std::size_t n) const noexcept
+  {
+    if(n < N)
+    {
+      return array[n];
+    }
+    else
+    {
+      return "";
+    }
+  }
+
+};
+
+}  // namespace detail
+
+constexpr std::size_t MAX_SIZE_TO_STRING_VIEW{20};
+
+constexpr detail::size_to_string_view_t<MAX_SIZE_TO_STRING_VIEW> size_to_string_view{};
+
 }  // namespace reflection
 
 namespace math {
@@ -590,9 +662,10 @@ template <class Test, class TArg>
 test(std::string_view, std::string_view, std::string_view,
      reflection::source_location, TArg, Test) -> test<Test, TArg>;
 template <class TSuite>
-struct suite {
-  TSuite run{};
+struct suite {  
   std::string_view name{};
+  reflection::source_location location{};
+  TSuite run{};
   constexpr auto operator()() { run(); }
   constexpr auto operator()() const { run(); }
 };
@@ -1437,6 +1510,10 @@ class reporter {
     printer_ << "\n \"" << test_run.name << "\"...";
   }
 
+  auto on(events::test_finish test_event) -> void {  // finishes nested test
+    printer_ << test_event.name << "...FINISHED\n";
+  }
+
   auto on(events::test_skip test_skip) -> void {
     printer_ << test_skip.name << "...SKIPPED\n";
     ++tests_.skip;
@@ -1453,6 +1530,14 @@ class reporter {
       printer_ << printer_.colors().pass << "PASSED" << printer_.colors().none
                << '\n';
     }
+  }
+
+  auto on(events::suite_begin suite) -> void {
+    printer_ << "Suite " << suite.name << '\n';
+  }
+
+  auto on(events::suite_end suite) -> void {
+    printer_ << "End of " << suite.name << '\n';
   }
 
   template <class TMsg>
@@ -2113,14 +2198,9 @@ class runner {
   [[nodiscard]] auto run(run_cfg rc = {}) -> bool {
     run_ = true;
     for (const auto& [suite, suite_name] : suites_) {
-      // add reporter in/out
-      if constexpr (requires { reporter_.on(events::suite_begin{}); }) {
-        reporter_.on(events::suite_begin{.type = "suite", .name = suite_name});
-      }
+      reporter_.on(events::suite_begin{.type = "suite", .name = suite_name});
       suite();
-      if constexpr (requires { reporter_.on(events::suite_end{}); }) {
-        reporter_.on(events::suite_end{.type = "suite", .name = suite_name});
-      }
+      reporter_.on(events::suite_end{.type = "suite", .name = suite_name});
     }
     suites_.clear();
 
@@ -2167,16 +2247,29 @@ template <class... Ts, class TEvent>
       static_cast<TEvent&&>(event));
 }
 
-template <class Test>
-struct test_location {
+template <class ForwardedType>
+struct locator {
   template <class T>
-  constexpr test_location(const T& t,
+  constexpr locator(const T& t,
                           const reflection::source_location& sl =
                               reflection::source_location::current())
-      : test{t}, location{sl} {}
+      : data{t}, location{sl} {}
 
-  Test test{};
+  ForwardedType data{};
   reflection::source_location location{};
+};
+
+struct suite {
+  std::string_view name{};
+
+  template <class... Ts>
+  constexpr auto operator=(locator<void (*)()> _suite) {
+    on<Ts...>(events::suite<void (*)()>{.name = name,
+                                       .location = _suite.location,
+                                       .run = _suite.data});
+    return _suite.data;
+  }
+
 };
 
 struct test {
@@ -2185,14 +2278,14 @@ struct test {
   std::vector<std::string_view> tag{};
 
   template <class... Ts>
-  constexpr auto operator=(test_location<void (*)()> _test) {
+  constexpr auto operator=(locator<void (*)()> _test) {
     on<Ts...>(events::test<void (*)()>{.type = type,
                                        .name = name,
                                        .tag = tag,
                                        .location = _test.location,
                                        .arg = none{},
-                                       .run = _test.test});
-    return _test.test;
+                                       .run = _test.data});
+    return _test.data;
   }
 
   template <class Test,
@@ -2358,6 +2451,11 @@ struct expect_ {
 namespace literals {
 [[nodiscard]] inline auto operator""_test(const char* name, std::size_t size) {
   return detail::test{"test", std::string_view{name, size}};
+}
+
+[[nodiscard]] inline auto operator""_suite(const char* name, std::size_t size)
+{
+  return detail::suite{std::string_view{name, size}};
 }
 
 template <char... Cs>
@@ -2603,35 +2701,56 @@ template <class Test>
 template <class F, class T,
           type_traits::requires_t<type_traits::is_container_v<T>> = 0>
 [[nodiscard]] constexpr auto operator|(const F& f, const T& t) {
-  return [f, t](const auto name) {
+  auto sub_tests = [f, t]() {
+    std::size_t count{0};
     for (const auto& arg : t) {
       detail::on<F>(events::test<F, typename T::value_type>{.type = "test",
-                                                            .name = name,
+                                                            .name = reflection::size_to_string_view(count++),
                                                             .tag = {},
                                                             .location = {},
                                                             .arg = arg,
                                                             .run = f});
     }
   };
+
+  return [sub_tests](const auto name) {
+    detail::on<void(*)()>(events::test<decltype(sub_tests)>{.type = "test",
+                                                 .name = name,
+                                                 .tag = {},
+                                                 .location = {},
+                                                 .run = sub_tests
+                                                 });
+  };
 }
 
-template <
-    class F, template <class...> class T, class... Ts,
-    type_traits::requires_t<not type_traits::is_container_v<T<Ts...>>> = 0>
-[[nodiscard]] constexpr auto operator|(const F& f, const T<Ts...>& t) {
-  return [f, t](const auto name) {
-    apply(
-        [f, name](const auto&... args) {
+template <class F, class... Ts>
+[[nodiscard]] constexpr auto operator|(const F& f, const std::tuple<Ts...>& t) {
+  
+  auto sub_tests = [f, t]() {
+    std::apply(
+        [f](const auto&... args) {
           (detail::on<F>(events::test<F, Ts>{.type = "test",
-                                             .name = name,
+                                             .name = reflection::type_name<Ts>(),
                                              .tag = {},
                                              .location = {},
                                              .arg = args,
-                                             .run = f}),
+                                             .run = f}
+                                            ),
            ...);
         },
         t);
   };
+
+  return [sub_tests](const auto name) {
+    detail::on<void(*)()>(events::test<decltype(sub_tests)>{.type = "test",
+                                                 .name = name,
+                                                 .tag = {},
+                                                 .location = {},
+                                                 .run = sub_tests
+                                                 });
+  };
+  
+
 }
 
 namespace terse {
@@ -2923,7 +3042,7 @@ struct suite {
   constexpr /*explicit(false)*/ suite(TSuite _suite) {
     static_assert(1 == sizeof(_suite));
     detail::on<decltype(+_suite)>(
-        events::suite<decltype(+_suite)>{.run = +_suite, .name = name});
+        events::suite<decltype(+_suite)>{.name = name, .location = location, .run = +_suite});
   }
 };
 
@@ -3129,6 +3248,7 @@ namespace spec {
 }  // namespace spec
 
 using literals::operator""_test;
+using literals::operator""_suite;
 
 using literals::operator""_b;
 using literals::operator""_i;

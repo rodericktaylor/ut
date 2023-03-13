@@ -282,11 +282,17 @@ struct test_summary_reporter : ut::reporter<ut::printer> {
     summary_counter_ = &counter;
   }
 
+  // The "global" suite is always triggered.
+  auto on(ut::events::suite_begin) -> void {} 
+  auto on(ut::events::suite_end) -> void {}
+
   auto on(ut::events::summary) -> void {
     if (summary_counter_) {
       ++*summary_counter_;
     }
   }
+
+
 
   std::size_t* summary_counter_{};
 };
@@ -1441,13 +1447,15 @@ int main() {
         expect(arg > 0_i) << "all values greater than 0";
       } | std::vector{1, 2, 3};
 
-      test_assert(3 == std::size(test_cfg.run_calls));
+      // An enclosing test and tests for each of the 3 values in the vector.
+      test_assert(4 == std::size(test_cfg.run_calls)); 
       test_assert("args vector"sv == test_cfg.run_calls[0].name);
-      test_assert(1 == std::any_cast<int>(test_cfg.run_calls[0].arg));
-      test_assert("args vector"sv == test_cfg.run_calls[1].name);
-      test_assert(2 == std::any_cast<int>(test_cfg.run_calls[1].arg));
-      test_assert("args vector"sv == test_cfg.run_calls[2].name);
-      test_assert(3 == std::any_cast<int>(test_cfg.run_calls[2].arg));
+      test_assert("0"sv == test_cfg.run_calls[1].name);
+      test_assert(1 == std::any_cast<int>(test_cfg.run_calls[1].arg));
+      test_assert("1"sv == test_cfg.run_calls[2].name);
+      test_assert(2 == std::any_cast<int>(test_cfg.run_calls[2].arg));
+      test_assert("2"sv == test_cfg.run_calls[3].name);
+      test_assert(3 == std::any_cast<int>(test_cfg.run_calls[3].arg));
       test_assert(3 == std::size(test_cfg.assertion_calls));
       test_assert(test_cfg.assertion_calls[0].result);
       test_assert("1 > 0" == test_cfg.assertion_calls[0].expr);
@@ -1464,11 +1472,13 @@ int main() {
         expect(0_i <= arg) << "all values greater than 0";
       } | std::array{99, 11};
 
-      test_assert(2 == std::size(test_cfg.run_calls));
+      // An enclosing test and tests for each of the 2 values in the array.
+      test_assert(3 == std::size(test_cfg.run_calls));
       test_assert("args array"sv == test_cfg.run_calls[0].name);
-      test_assert(99 == std::any_cast<int>(test_cfg.run_calls[0].arg));
-      test_assert("args array"sv == test_cfg.run_calls[1].name);
-      test_assert(11 == std::any_cast<int>(test_cfg.run_calls[1].arg));
+      test_assert("0"sv == test_cfg.run_calls[1].name);
+      test_assert(99 == std::any_cast<int>(test_cfg.run_calls[1].arg));
+      test_assert("1"sv == test_cfg.run_calls[2].name);
+      test_assert(11 == std::any_cast<int>(test_cfg.run_calls[2].arg));
       test_assert(2 == std::size(test_cfg.assertion_calls));
       test_assert(test_cfg.assertion_calls[0].result);
       test_assert("0 <= 99" == test_cfg.assertion_calls[0].expr);
@@ -1483,13 +1493,15 @@ int main() {
         expect(_c('s') == arg or _c('t') == arg or _c('r') == arg);
       } | std::string{"str"};
 
-      test_assert(3 == std::size(test_cfg.run_calls));
+      // An enclosing test and tests for each of the 3 characters in the string.
+      test_assert(4 == std::size(test_cfg.run_calls));
       test_assert("args string"sv == test_cfg.run_calls[0].name);
-      test_assert('s' == std::any_cast<char>(test_cfg.run_calls[0].arg));
-      test_assert("args string"sv == test_cfg.run_calls[1].name);
-      test_assert('t' == std::any_cast<char>(test_cfg.run_calls[1].arg));
-      test_assert("args string"sv == test_cfg.run_calls[2].name);
-      test_assert('r' == std::any_cast<char>(test_cfg.run_calls[2].arg));
+      test_assert("0"sv == test_cfg.run_calls[1].name);
+      test_assert('s' == std::any_cast<char>(test_cfg.run_calls[1].arg));
+      test_assert("1"sv == test_cfg.run_calls[2].name);
+      test_assert('t' == std::any_cast<char>(test_cfg.run_calls[2].arg));
+      test_assert("2"sv == test_cfg.run_calls[3].name);
+      test_assert('r' == std::any_cast<char>(test_cfg.run_calls[3].arg));
       test_assert(3 == std::size(test_cfg.assertion_calls));
       test_assert(test_cfg.assertion_calls[0].result);
       test_assert("((s == s or t == s) or r == s)" ==
@@ -1511,15 +1523,17 @@ int main() {
         expect(value > 0_i);
       } | std::map<char, int>{{'a', 1}, {'b', 2}};
 
-      test_assert(2 == std::size(test_cfg.run_calls));
+      // An enclosing test and tests for each of the 2 pairs in the map.
+      test_assert(3 == std::size(test_cfg.run_calls));
       test_assert("args map"sv == test_cfg.run_calls[0].name);
+      test_assert("0"sv == test_cfg.run_calls[1].name);
       test_assert(
           std::pair<const char, int>{'a', 1} ==
-          std::any_cast<std::pair<const char, int>>(test_cfg.run_calls[0].arg));
-      test_assert("args map"sv == test_cfg.run_calls[1].name);
+          std::any_cast<std::pair<const char, int>>(test_cfg.run_calls[1].arg));
+      test_assert("1"sv == test_cfg.run_calls[2].name);
       test_assert(
           std::pair<const char, int>{'b', 2} ==
-          std::any_cast<std::pair<const char, int>>(test_cfg.run_calls[1].arg));
+          std::any_cast<std::pair<const char, int>>(test_cfg.run_calls[2].arg));
       test_assert(4 == std::size(test_cfg.assertion_calls));
       test_assert(test_cfg.assertion_calls[0].result);
       test_assert("(a == a or b == a)" == test_cfg.assertion_calls[0].expr);
@@ -1541,13 +1555,15 @@ int main() {
             << "all types are integrals or void";
       } | std::tuple<bool, int, void*>{};
 
-      test_assert(3 == std::size(test_cfg.run_calls));
+      // An enclosing test and tests for each of the 3 types in the tuple.
+      test_assert(4 == std::size(test_cfg.run_calls));
       test_assert("types"sv == test_cfg.run_calls[0].name);
-      void(std::any_cast<bool>(test_cfg.run_calls[0].arg));
-      test_assert("types"sv == test_cfg.run_calls[1].name);
-      void(std::any_cast<int>(test_cfg.run_calls[1].arg));
-      test_assert("types"sv == test_cfg.run_calls[2].name);
-      void(std::any_cast<void*>(test_cfg.run_calls[2].arg));
+      test_assert("bool"sv == test_cfg.run_calls[1].name);
+      void(std::any_cast<bool>(test_cfg.run_calls[1].arg));
+      test_assert("int"sv == test_cfg.run_calls[2].name);
+      void(std::any_cast<int>(test_cfg.run_calls[2].arg));
+      test_assert("void*"sv == test_cfg.run_calls[3].name);
+      void(std::any_cast<void*>(test_cfg.run_calls[3].arg));
       test_assert(3 == std::size(test_cfg.assertion_calls));
       test_assert("(true or void == bool)" == test_cfg.assertion_calls[0].expr);
       test_assert(test_cfg.assertion_calls[0].result);
@@ -1566,11 +1582,13 @@ int main() {
         expect(type<TArg> == type<int> or type<TArg> == type<char>);
       } | std::tuple{42, 'x'};
 
-      test_assert(2 == std::size(test_cfg.run_calls));
+      // An enclosing test and tests for each of the 2 values in the tuple.
+      test_assert(3 == std::size(test_cfg.run_calls));
       test_assert("args and types"sv == test_cfg.run_calls[0].name);
-      test_assert(42 == std::any_cast<int>(test_cfg.run_calls[0].arg));
-      test_assert("args and types"sv == test_cfg.run_calls[1].name);
-      test_assert('x' == std::any_cast<char>(test_cfg.run_calls[1].arg));
+      test_assert("int"sv == test_cfg.run_calls[1].name);
+      test_assert(42 == std::any_cast<int>(test_cfg.run_calls[1].arg));
+      test_assert("char"sv == test_cfg.run_calls[2].name);
+      test_assert('x' == std::any_cast<char>(test_cfg.run_calls[2].arg));
       test_assert(4 == std::size(test_cfg.assertion_calls));
       test_assert(test_cfg.assertion_calls[0].result);
       test_assert(test_cfg.assertion_calls[1].result);
